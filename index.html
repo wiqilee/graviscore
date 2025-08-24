@@ -1,153 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <!--
-    GraviScore — Compose with Gravity
-    Author: @wiqile • 2025 • AGPL-3.0-or-later
-    Keep the visible credit in the UI and NOTICE.
-  -->
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0f14" />
-  <meta name="author" content="wiqile" />
-  <title>GraviScore — Compose with Gravity (by @wiqile)</title>
+  <!-- ====================================================================
+       GraviScore — Compose with Gravity
+       © 2025 @wiqile • Code: AGPL-3.0-or-later • Assets: CC BY-NC 4.0
+       Visible credit required in UI/footer: “GraviScore — by @wiqile”
+       ==================================================================== -->
 
-  <!-- Open Graph / Twitter -->
-  <meta property="og:title" content="GraviScore — Compose with Gravity" />
-  <meta property="og:description" content="A musical gravity puzzler by @wiqile. Daily Challenge, Level Editor, and dual leaderboard (Sheets/Firebase)." />
-  <meta property="og:type" content="website" />
-  <meta property="og:image" content="icons/og.png" />
-  <meta name="twitter:card" content="summary_large_image" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="author" content="@wiqile">
+  <meta name="description" content="Build a melody with physics. Place up to six planets, touch the glowing notes in order, then reach the goal.">
+  <title>GraviScore — Compose with Gravity</title>
 
-  <!-- PWA / Icons -->
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icons/icon-192.png" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" sizes="180x180" />
+  <!-- Canonical -->
+  <link rel="canonical" href="https://wiqilee.github.io/graviscore/">
 
-  <!-- cache-buster bump -->
-  <link rel="stylesheet" href="./style.css?v=7" />
+  <!-- App icons / PWA -->
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b0f14">
+
+  <!-- Open Graph -->
+  <meta property="og:site_name" content="GraviScore">
+  <meta property="og:title" content="GraviScore — Compose with Gravity">
+  <meta property="og:description" content="Build a melody with physics. Place up to six planets, touch notes in order, then reach the goal.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://wiqilee.github.io/graviscore/">
+  <meta property="og:image" content="https://wiqilee.github.io/graviscore/icons/og.png?v=2">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="GraviScore — Compose with Gravity">
+  <meta name="twitter:description" content="Build a melody with physics. Place up to six planets, touch notes in order, then reach the goal.">
+  <meta name="twitter:image" content="https://wiqilee.github.io/graviscore/icons/og.png?v=2">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
-  <canvas id="canvas" aria-label="GraviScore canvas"></canvas>
-
-  <div id="ui" role="region" aria-label="Game controls">
-    <div class="panel" id="panel">
-      <div class="title">
-        <h1>GraviScore</h1>
-        <span class="chip">Compose with Gravity</span>
-        <button id="btn-help-toggle" class="ghost" title="Toggle How to play (J)">Help</button>
-        <button id="btn-hide-ui" class="ghost" style="margin-left:auto" title="Hide panel (H)">Hide</button>
-      </div>
-
-      <div class="row" style="margin-bottom:8px">
-        <button id="btn-launch" class="primary">⏵ Launch</button>
-        <button id="btn-reset">↺ Reset</button>
-        <button id="btn-clear" class="ghost">🧹 Clear Planets</button>
-        <span class="spacer"></span>
-        <span class="badge">Planets: <b id="planet-count">0</b>/<b id="planet-max">6</b></span>
-        <span class="badge">Notes: <b id="note-progress">0</b>/<b id="note-total">0</b></span>
-      </div>
-
-      <div class="row">
-        <label class="badge"><input type="checkbox" id="chk-trails" checked /> Trails</label>
-        <label class="badge"><input type="checkbox" id="chk-audio" checked /> Audio</label>
-        <label class="badge"><input type="checkbox" id="chk-physics" checked /> Ultra Physics</label>
-        <label class="badge"><input type="checkbox" id="chk-collide" checked /> Walls Bounce</label>
-        <label class="badge"><input type="checkbox" id="chk-harmonics" checked /> Harmonic Shift</label>
-        <label class="badge"><input type="checkbox" id="chk-time" checked /> Time Dilation</label>
-        <button id="btn-undo" class="ghost">↶ Undo Planet</button>
-      </div>
-
-      <div class="row" style="margin-top:8px">
-        <label class="badge">Level:
-          <select id="sel-level">
-            <option value="0">Starter — C E G c</option>
-            <option value="1">Orbit Waltz — D F A d</option>
-            <option value="2">Crossfire — E G B e</option>
-            <option value="3">Spiral Minor — A C D E</option>
-            <option value="4">Cascade — G B D g</option>
-          </select>
-        </label>
-        <button id="btn-daily" class="ghost" title="Daily Challenge (seed by date)">📅 Daily</button>
-        <button id="btn-share" class="primary">🔗 Share Link</button>
-        <span class="tips">Share packs the level and your planets into the URL.</span>
-      </div>
-
-      <div class="row" style="margin-top:6px">
-        <button id="btn-ping" class="ghost" title="Left-click: beep unlock · Right-click: silent (P)">🔊 Ping</button>
-        <label class="badge"><input type="checkbox" id="chk-edit" /> Edit Mode</label>
-        <span class="tips">Edit Mode: drag notes and the goal; saved in the Share link.</span>
-      </div>
-
-      <div class="row" style="margin-top:6px">
-        <label class="badge">Leaderboard:
-          <select id="sel-backend">
-            <option value="sheets">Sheets (free)</option>
-            <option value="firebase">Firebase (realtime)</option>
-          </select>
-        </label>
-        <input id="inp-name" class="input" type="text" maxlength="16" placeholder="Name (optional)" />
-        <button id="btn-top" class="ghost">🏆 Top 10</button>
-      </div>
-
-      <div class="row" style="margin-top:6px">
-        <label class="badge"><input type="checkbox" id="chk-reduce" /> Reduced Motion</label>
-        <label class="badge"><input type="checkbox" id="chk-contrast" /> High Contrast</label>
-        <label class="badge"><input type="checkbox" id="chk-haptics" checked /> Haptics</label>
-      </div>
-
-      <div class="scorebar">
-        <span class="pill" id="status">Idle</span>
-        <span class="pill" id="time">Time 0.00s</span>
-        <span class="pill" id="score">Score —</span>
-      </div>
-
-      <div class="row" style="margin-top:6px">
-        <button id="btn-export" class="ghost">⬆︎ Export JSON</button>
-        <button id="btn-import" class="ghost">⬇︎ Import JSON</button>
-      </div>
+  <noscript>
+    <div style="padding:16px;color:#fff;background:#111;border-bottom:1px solid #222">
+      GraviScore requires JavaScript to run. Please enable JavaScript and reload this page.
     </div>
+  </noscript>
 
-    <button id="btn-show-ui" class="mini-ui" style="display:none">Show UI (H)</button>
+  <!-- Canvas / App root (the UI is built by main.js) -->
+  <canvas id="scene"></canvas>
+  <div id="ui-root"></div>
 
-    <div id="help" role="dialog" aria-label="How to play">
-      <div class="help-header" id="help-drag">
-        <strong>How to play</strong>
-        <div class="spacer"></div>
-        <button id="btn-help-close" class="ghost">✕</button>
-      </div>
-      <div class="help-body">
-        <ol>
-          <li>Place up to <b>six planets</b> anywhere on the field.</li>
-          <li>Press <b>Launch</b> to fire the puck.</li>
-          <li>Touch the <b>glowing notes in order</b> to unlock the goal.</li>
-          <li>Reach the <b>goal</b> to finish and score.</li>
-          <li><b>Right-click</b> removes the nearest planet. Use <b>Edit Mode</b> to drag notes and the goal.</li>
-        </ol>
-        <p class="muted">Tip: Click <b>🔊 Ping</b> once if audio is muted by the browser.</p>
-      </div>
-    </div>
+  <!-- Visible credit (license requires keeping this on-screen) -->
+  <footer id="credit" aria-label="Attribution">
+    GraviScore — by <a href="https://github.com/wiqilee" target="_blank" rel="noopener">@wiqile</a>
+  </footer>
 
-    <div id="leaderboard" role="dialog" aria-label="Leaderboard" hidden>
-      <div class="lb-header" id="lb-drag">
-        <strong>Top 10</strong>
-        <span class="lb-seed" id="lb-seed"></span>
-        <div class="spacer"></div>
-        <button id="btn-lb-close" class="ghost">✕</button>
-      </div>
-      <div class="lb-body">
-        <table>
-          <thead><tr><th>#</th><th>Name</th><th>Score</th><th>Planets</th><th>When</th></tr></thead>
-          <tbody id="lb-body"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <!-- Scripts (ES modules). Load leaderboard first, then main. -->
+  <script type="module" src="leaderboard.js?v=2"></script>
+  <script type="module" src="main.js?v=2"></script>
 
-  <div class="watermark">GraviScore — by @wiqile · Musical gravity puzzler</div>
-
-  <!-- cache-buster bump -->
-  <script type="module" src="./leaderboard.js?v=7"></script>
-  <script type="module" src="./main.js?v=7"></script>
+  <!-- Register Service Worker (PWA) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
