@@ -1,0 +1,13 @@
+GraviScore — Compose with Gravity
+Copyright (c) 2025 wiqile
+
+Attribution requirement (AGPLv3 §7 additional term):
+- You must preserve visible on-screen credit “GraviScore — by @wiqile” in the app UI.
+- You must keep author attribution “@wiqile” in source headers and README.
+
+License summary:
+- Code: GNU Affero General Public License v3.0 or later (see LICENSE).
+- Assets (images/audio/fonts if present): Creative Commons BY-NC 4.0.
+
+If you run or offer a modified version over a network, you must provide the
+complete corresponding source under the same license.
