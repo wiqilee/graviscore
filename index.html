@@ -57,7 +57,10 @@
     GraviScore — by <a href="https://github.com/wiqile" target="_blank" rel="noopener">@wiqile</a>
   </footer>
 
-  <!-- Scripts: load leaderboard first, then the game -->
+  <!-- Shim must load BEFORE other modules -->
+  <script type="module" src="./worker-path-fix.js"></script>
+
+  <!-- App modules -->
   <script type="module" src="./leaderboard.js"></script>
   <script type="module" src="./main.js"></script>
 
