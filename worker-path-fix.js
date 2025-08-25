@@ -1,11 +1,13 @@
-/* GraviScore — Worker path fix + error overlay
+/* GraviScore — Worker/DOM shim for GitHub Pages
    © 2025 @wiqile | AGPL-3.0-or-later
-   Purpose:
-   - Make `new Worker("worker.js", {type:"module"})` safe on GitHub Pages subfolders.
-   - Provide a visible overlay when JS crashes (helps debugging on Pages).
+
+   Fungsi:
+   1) Overlay error (biar kelihatan kalau crash).
+   2) Pastikan ada <canvas>, dan alias selector #canvas / #scene / canvas -> kanvas itu.
+   3) Patch window.Worker agar path relatif aman di subfolder (/graviscore/).
 */
 
-// ---------------- Error overlay (dev helper) ----------------
+// ---------- Error overlay ----------
 (function () {
     function overlay(msg) {
       try {
@@ -15,38 +17,83 @@
         el.textContent = msg;
         document.body.appendChild(el);
         setTimeout(() => el.remove(), 12000);
-      } catch {/* ignore */}
+      } catch { /* ignore */ }
     }
-    window.addEventListener("error", (e) => {
-      overlay("[Error] " + (e.error?.stack || e.message));
-    });
-    window.addEventListener("unhandledrejection", (e) => {
-      overlay("[Promise] " + (e.reason?.stack || e.reason));
-    });
+    window.addEventListener("error", (e) =>
+      overlay("[Error] " + (e.error?.stack || e.message))
+    );
+    window.addEventListener("unhandledrejection", (e) =>
+      overlay("[Promise] " + (e.reason?.stack || e.reason))
+    );
   })();
   
-  // ---------------- Worker path patch ----------------
+  // ---------- DOM alias: #scene / #canvas / canvas ----------
+  (function () {
+    function ensureCanvas() {
+      let c =
+        document.getElementById("canvas") ||
+        document.getElementById("scene") ||
+        document.querySelector("canvas");
+  
+      if (!c) {
+        c = document.createElement("canvas");
+        c.id = "canvas";
+        document.body.prepend(c);
+      }
+  
+      // Simpan referensi asli
+      const _get = document.getElementById.bind(document);
+      const _qs  = document.querySelector.bind(document);
+      const _qsa = document.querySelectorAll.bind(document);
+  
+      // Alias id
+      document.getElementById = function (id) {
+        if (id === "canvas" || id === "scene") return c;
+        return _get(id);
+      };
+  
+      // Alias querySelector
+      document.querySelector = function (sel) {
+        if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return c;
+        return _qs(sel);
+      };
+  
+      // Alias querySelectorAll (kasus langka)
+      document.querySelectorAll = function (sel) {
+        if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return [c];
+        return _qsa(sel);
+      };
+  
+      // Pastikan kontainer UI ada
+      if (!_get("ui-root")) {
+        const ui = document.createElement("div");
+        ui.id = "ui-root";
+        document.body.appendChild(ui);
+      }
+    }
+  
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", ensureCanvas, { once: true });
+    } else {
+      ensureCanvas();
+    }
+  })();
+  
+  // ---------- Worker path patch ----------
   (function () {
     const NativeWorker = window.Worker;
-    if (!NativeWorker) return;
-  
-    // Only patch once
-    if (NativeWorker.__graviscore_patched) return;
+    if (!NativeWorker || NativeWorker.__graviscore_patched) return;
   
     class PatchedWorker extends NativeWorker {
       constructor(specifier, options) {
-        // If `specifier` is a string (e.g., "worker.js"), resolve it against the page URL,
-        // so /graviscore/worker.js loads correctly on GitHub Pages.
         try {
           if (typeof specifier === "string") {
             const url = new URL(specifier, document.baseURI);
             return super(url, options);
           }
-          // If it's already a URL (e.g., new URL("./worker.js", import.meta.url)), pass through.
           return super(specifier, options);
         } catch (err) {
           console.warn("[Worker patch] Module worker failed, trying classic fallback:", err);
-          // Fallback: classic worker via Blob + importScripts
           try {
             const href =
               typeof specifier === "string"
@@ -58,7 +105,7 @@
               type: "application/javascript",
             });
             const blobUrl = URL.createObjectURL(blob);
-            return new NativeWorker(blobUrl); // classic worker (no {type:"module"})
+            return new NativeWorker(blobUrl); // classic worker
           } catch (err2) {
             console.error("[Worker patch] Fallback failed:", err2);
             throw err;
