@@ -48,23 +48,23 @@
     </div>
   </noscript>
 
-  <!-- Canvas / App root -->
-  <canvas id="canvas"></canvas>
+  <!-- Satu kanvas saja; id bebas (shim akan mengalias #scene dan #canvas) -->
+  <canvas id="scene"></canvas>
   <div id="ui-root"></div>
 
-  <!-- Visible credit (license requires this to remain) -->
+  <!-- Visible credit -->
   <footer id="credit" aria-label="Attribution">
     GraviScore — by <a href="https://github.com/wiqile" target="_blank" rel="noopener">@wiqile</a>
   </footer>
 
-  <!-- Shim must load BEFORE other modules -->
+  <!-- Shim WAJIB lebih dulu -->
   <script type="module" src="./worker-path-fix.js"></script>
 
   <!-- App modules -->
   <script type="module" src="./leaderboard.js"></script>
   <script type="module" src="./main.js"></script>
 
-  <!-- Register Service Worker (PWA) -->
+  <!-- Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
