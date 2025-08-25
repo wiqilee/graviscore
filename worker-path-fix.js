@@ -1,9 +1,8 @@
 /* GraviScore — Worker/DOM shim for GitHub Pages
    © 2025 @wiqile | AGPL-3.0-or-later
-
-   Fungsi:
-   1) Overlay error (biar kelihatan kalau crash).
-   2) Pastikan ada <canvas>, dan alias selector #canvas / #scene / canvas -> kanvas itu.
+   Tujuan:
+   1) Overlay error agar crash terlihat.
+   2) Pastikan selalu ada <canvas id="canvas">, dan alias selector #scene → kanvas ini.
    3) Patch window.Worker agar path relatif aman di subfolder (/graviscore/).
 */
 
@@ -27,55 +26,53 @@
     );
   })();
   
-  // ---------- DOM alias: #scene / #canvas / canvas ----------
-  (function () {
-    function ensureCanvas() {
-      let c =
-        document.getElementById("canvas") ||
-        document.getElementById("scene") ||
-        document.querySelector("canvas");
+  // ---------- DOM: pastikan ada canvas & alias selector ----------
+  (function ensureCanvasNow() {
+    // Buat kanvas kalau belum ada
+    let c =
+      document.getElementById("canvas") ||
+      document.getElementById("scene") ||
+      document.querySelector("canvas");
   
-      if (!c) {
-        c = document.createElement("canvas");
-        c.id = "canvas";
-        document.body.prepend(c);
-      }
-  
-      // Simpan referensi asli
-      const _get = document.getElementById.bind(document);
-      const _qs  = document.querySelector.bind(document);
-      const _qsa = document.querySelectorAll.bind(document);
-  
-      // Alias id
-      document.getElementById = function (id) {
-        if (id === "canvas" || id === "scene") return c;
-        return _get(id);
+    if (!c) {
+      c = document.createElement("canvas");
+      c.id = "canvas";
+      // pastikan <body> sudah ada; kalau belum, tunda sedikit
+      const attach = () => {
+        (document.body || document.documentElement).prepend(c);
       };
-  
-      // Alias querySelector
-      document.querySelector = function (sel) {
-        if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return c;
-        return _qs(sel);
-      };
-  
-      // Alias querySelectorAll (kasus langka)
-      document.querySelectorAll = function (sel) {
-        if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return [c];
-        return _qsa(sel);
-      };
-  
-      // Pastikan kontainer UI ada
-      if (!_get("ui-root")) {
-        const ui = document.createElement("div");
-        ui.id = "ui-root";
-        document.body.appendChild(ui);
-      }
+      if (document.body) attach();
+      else document.addEventListener("DOMContentLoaded", attach, { once: true });
     }
   
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", ensureCanvas, { once: true });
-    } else {
-      ensureCanvas();
+    // Simpan referensi asli
+    const _get = document.getElementById.bind(document);
+    const _qs  = document.querySelector.bind(document);
+    const _qsa = document.querySelectorAll.bind(document);
+  
+    // Alias id
+    document.getElementById = function (id) {
+      if (id === "canvas" || id === "scene") return c;
+      return _get(id);
+    };
+  
+    // Alias querySelector
+    document.querySelector = function (sel) {
+      if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return c;
+      return _qs(sel);
+    };
+  
+    // Alias querySelectorAll (kasus langka)
+    document.querySelectorAll = function (sel) {
+      if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return [c];
+      return _qsa(sel);
+    };
+  
+    // Pastikan kontainer UI ada
+    if (!_get("ui-root")) {
+      const ui = document.createElement("div");
+      ui.id = "ui-root";
+      (document.body || document.documentElement).appendChild(ui);
     }
   })();
   
