@@ -403,24 +403,47 @@ function injectModalStyles(){
   .modal .body{padding:10px 14px;color:#cfe3ff}
   .table{width:100%;border-collapse:collapse}
   .table th,.table td{padding:8px;border-bottom:1px solid #223040;text-align:left;font:13px system-ui}
+  .iconbtn{background:#1a2738;border:1px solid #2a3b53;color:#d6eaff;border-radius:8px;padding:6px 10px;cursor:pointer}
   .toast{position:fixed;left:12px;bottom:12px;background:#122033;color:#d9ecff;border:1px solid #29405a;border-radius:10px;padding:8px 12px;z-index:60}
   `;
   const style = document.createElement("style");
   style.id = "modalStyles"; style.textContent = css;
   document.head.appendChild(style);
 }
-function createModalContainers(){
-  if(document.getElementById("topBackdrop")) return;
-  const helpBox = document.getElementById("helpBox");
-  helpBox?.classList.add("hidden"); // default hidden
 
+function createModalContainers(){
+  if(document.getElementById("topBackdrop")){
+    // pastikan handler global tetap ada
+    addGlobalModalHandlers();
+    return;
+  }
+  // Help box (tetap simpel)
+  if(!document.getElementById("helpBox")){
+    const hb = document.createElement("div");
+    hb.id="helpBox"; hb.className="hidden";
+    hb.style.cssText="position:fixed;top:16px;right:16px;background:#0f141c;border:1px solid #283548;border-radius:12px;padding:12px 14px;color:#d7e7ff;z-index:40;max-width:380px";
+    hb.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong>How to play</strong>
+      <button id="btnHelpClose" class="iconbtn">✕</button>
+    </div>
+    <ol style="margin:0 0 6px 18px;padding:0">
+      <li>Place up to six planets, then press Launch.</li>
+      <li>Touch the glowing notes in order to unlock the goal.</li>
+      <li>Reach the goal to finish and score.</li>
+      <li>Right-click removes the nearest planet. Use <em>Edit Mode</em> to drag notes & goal.</li>
+    </ol>
+    <small>Tip: click <em>Ping</em> once if the browser mutes audio.</small>`;
+    document.body.appendChild(hb);
+  }
+
+  // Top 10 modal
   const wrap = document.createElement("div");
   wrap.id = "topBackdrop"; wrap.className = "modal-backdrop hidden";
   wrap.innerHTML = `
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="topTitle">
       <header>
-        <h3>Top 10</h3>
-        <button id="btnTopClose">✕</button>
+        <h3 id="topTitle">Top 10</h3>
+        <button id="btnTopClose" class="iconbtn" aria-label="Close">✕</button>
       </header>
       <div class="body">
         <div id="topCaption" class="muted" style="margin-bottom:8px"></div>
@@ -428,19 +451,39 @@ function createModalContainers(){
       </div>
     </div>`;
   document.body.appendChild(wrap);
-  wrap.addEventListener("click",(e)=>{ if(e.target===wrap) hideTopModal(); });
-  document.getElementById("btnTopClose").onclick = hideTopModal;
+
+  // handler close (backdrop, tombol, Esc)
+  addGlobalModalHandlers();
 }
+
+function addGlobalModalHandlers(){
+  const bd = document.getElementById("topBackdrop");
+  if(!bd) return;
+  bd.onclick = (e)=>{ if(e.target === bd) hideTopModal(); };
+  const btn = document.getElementById("btnTopClose");
+  if(btn) btn.onclick = hideTopModal;
+  // Esc — add once
+  if(!window.__graviEscBound){
+    window.addEventListener("keydown", (e)=>{ if(e.key === "Escape") hideTopModal(); });
+    window.__graviEscBound = true;
+  }
+}
+
 function showTopModal(rows, seed){
+  // pastikan container ada & rebinding tombol setiap buka
+  createModalContainers();
+  addGlobalModalHandlers();
+
   const bd = document.getElementById("topBackdrop");
   const tbl = document.getElementById("topTable");
   const cap = document.getElementById("topCaption");
   cap.textContent = `Seed: ${seed}`;
   tbl.innerHTML = `<tr><th>#</th><th>Name</th><th>Score</th><th>Planets</th></tr>` +
-    rows.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name||"—"}</td><td>${r.score}</td><td>${r.planets}</td></tr>`).join("");
+    (rows && rows.length ? rows : []).map((r,i)=>`<tr><td>${i+1}</td><td>${r.name||"—"}</td><td>${r.score}</td><td>${r.planets}</td></tr>`).join("");
   bd.classList.remove("hidden");
 }
-function hideTopModal(){ document.getElementById("topBackdrop").classList.add("hidden"); }
+function hideTopModal(){ const bd=document.getElementById("topBackdrop"); if(bd) bd.classList.add("hidden"); }
+
 function showToast(msg){
   const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t);
   setTimeout(()=>t.remove(), 1600);
