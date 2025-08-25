@@ -28,7 +28,7 @@
   
   // ---------- DOM: pastikan ada canvas & alias selector ----------
   (function ensureCanvasNow() {
-    // Buat kanvas kalau belum ada
+    // Buat/ambil kanvas
     let c =
       document.getElementById("canvas") ||
       document.getElementById("scene") ||
@@ -37,10 +37,7 @@
     if (!c) {
       c = document.createElement("canvas");
       c.id = "canvas";
-      // pastikan <body> sudah ada; kalau belum, tunda sedikit
-      const attach = () => {
-        (document.body || document.documentElement).prepend(c);
-      };
+      const attach = () => (document.body || document.documentElement).prepend(c);
       if (document.body) attach();
       else document.addEventListener("DOMContentLoaded", attach, { once: true });
     }
@@ -50,19 +47,15 @@
     const _qs  = document.querySelector.bind(document);
     const _qsa = document.querySelectorAll.bind(document);
   
-    // Alias id
+    // Alias id/query agar #scene/#canvas selalu mengembalikan kanvas ini
     document.getElementById = function (id) {
       if (id === "canvas" || id === "scene") return c;
       return _get(id);
     };
-  
-    // Alias querySelector
     document.querySelector = function (sel) {
       if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return c;
       return _qs(sel);
     };
-  
-    // Alias querySelectorAll (kasus langka)
     document.querySelectorAll = function (sel) {
       if (sel === "#canvas" || sel === "#scene" || sel === "canvas") return [c];
       return _qsa(sel);

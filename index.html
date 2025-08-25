@@ -48,28 +48,27 @@
     </div>
   </noscript>
 
-  <!-- Penting: id = "canvas" supaya cocok dengan main.js -->
+  <!-- Penting: id = "canvas" agar cocok dengan main.js -->
   <canvas id="canvas"></canvas>
   <div id="ui-root"></div>
 
-  <!-- Visible credit (license requires this to remain) -->
+  <!-- Visible credit (license mewajibkan ini tampil) -->
   <footer id="credit" aria-label="Attribution">
     GraviScore — by <a href="https://github.com/wiqile" target="_blank" rel="noopener">@wiqile</a>
   </footer>
 
-  <!-- Single module loader: pastikan shim dieksekusi sebelum main.js -->
+  <!-- Loader tunggal: pastikan shim dieksekusi SEBELUM main.js -->
   <script type="module">
-    import './worker-path-fix.js';   // membuat/alias <canvas> & perbaiki URL Worker
+    import './worker-path-fix.js';   // buat/alias <canvas> & perbaiki URL Worker
     import './leaderboard.js';       // leaderboard (Sheets/Firebase)
     import './main.js';              // game utama
   </script>
 
-  <!-- (opsional) Service Worker untuk PWA; aman diaktifkan belakangan setelah fix -->
+  <!-- SW dimatikan saat debug agar tidak nge-cache versi lama -->
   <script>
-    if ('serviceWorker' in navigator) {
-      // Sementara dimatikan agar tidak nge-cache saat debugging:
-      // navigator.serviceWorker.register('./sw.js').catch(()=>{});
-    }
+    /* if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    } */
   </script>
 </body>
 </html>
