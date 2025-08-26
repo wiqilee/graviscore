@@ -1,537 +1,466 @@
-/* GraviScore — Main (full UI)
-   © 2025 @wiqile | Code: AGPL-3.0-or-later | Assets: CC BY-NC 4.0
-   Visible credit required in UI: “GraviScore — by @wiqile”
+/* GraviScore — Compose with Gravity
+   Main script, no build step. 2025 © @wiqile (AGPL-3.0-or-later)
+   - Draggable control panel
+   - Help dock (right side), accessible toggles: Reduced Motion / High Contrast / Haptics
+   - 5 levels, Top 10 modal, Ping louder
 */
 
-// ================= Worker dulu (hindari “before initialization”) =================
-let worker = null;
-let workerReady = false;
+"use strict";
 
-// ================= Canvas =================
-const canvas = document.getElementById("canvas") || document.querySelector("canvas");
-if (!canvas) throw new Error("Canvas element not found");
+/* ---------------- Canvas ---------------- */
+const canvas = document.createElement("canvas");
+canvas.id = "stage";
+document.body.appendChild(canvas);
 const ctx = canvas.getContext("2d", { alpha: false });
 
-// ================= State global =================
-let G = 2300;
-let ultraPhysics = true;
-let wallsBounce = true;
-let useTimeDilation = true;
-let trailsEnabled = true;
-let audioEnabled = false;
-
-let running = false;
-let planets = []; // {x,y,mass,r}
-let level = { notes: [], goal: { x: 0, y: 0, r: 16 } };
-let puck = { x: 0, y: 0, vx: 0, vy: 0, r: 7 };
-let simTime = 0;
-let nextNoteIndex = 0;
-
-const TRAIL_MAX = 160;
-const trail = [];
-
-let lastRemoved = null;
-let editMode = false; // drag notes/goal ketika true
-let drag = null;      // {type:'note'|'goal', index?, dx,dy}
-
-const uid =
-  localStorage.getItem("gravi_uid") ||
-  (localStorage.setItem("gravi_uid", crypto.randomUUID()), localStorage.getItem("gravi_uid"));
-let playerName = localStorage.getItem("gravi_name") || "";
-let seed = "level:0";
-let daily = false;
-
-let audioCtx = null;
-
-// ================= Utils =================
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
-
-function rescaleCanvas() {
-  const dpr = DPR();
-  canvas.width = Math.max(1, Math.floor(window.innerWidth * dpr));
-  canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
+function fit() {
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  canvas.width = Math.floor(innerWidth * dpr);
+  canvas.height = Math.floor(innerHeight * dpr);
   canvas.style.width = "100vw";
   canvas.style.height = "100vh";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener("resize", fit);
+fit();
+
+/* --------------- World & state --------------- */
+const WORLD = {
+  W: () => canvas.width / (window.devicePixelRatio || 1),
+  H: () => canvas.height / (window.devicePixelRatio || 1),
+  maxPlanets: 6,
+  G: 2300
+};
+
+const puck = { x: 90, y: 0, vx: 130, vy: 0, r: 7 };
+let planets = [];
+let running = false;
+let t = 0;
+let trail = [];
+const TRAIL_MAX = 160;
+
+let level = { notes: [], goal: { x: 0, y: 0, r: 16 }, name: "Starter" };
+let nextNoteIndex = 0;
+
+function resetPuck() {
+  puck.x = 90;
+  puck.y = WORLD.H() * 0.5;
+  puck.vx = 130;
+  puck.vy = 0;
+  t = 0;
+  nextNoteIndex = 0;
+  trail.length = 0;
 }
 
-function toWorld(ev) {
-  const r = canvas.getBoundingClientRect();
-  const dpr = DPR();
-  return { x: (ev.clientX - r.left) * dpr, y: (ev.clientY - r.top) * dpr };
-}
-
-function b64u(s) {
-  return btoa(unescape(encodeURIComponent(s)))
-    .replace(/=+$/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-function ub64u(s) {
-  s = s.replace(/-/g, "+").replace(/_/g, "/");
-  while (s.length % 4) s += "=";
-  return decodeURIComponent(escape(atob(s)));
-}
-function todaySeed() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `daily:${y}-${m}-${dd}`;
-}
-
-// ================= Level (starter + share) =================
-function starterLevel() {
-  const W = canvas.width, H = canvas.height;
-  const cx = W * 0.55, cy = H * 0.5, r = Math.min(W, H) * 0.20;
-  level = {
+/* ---------------- Levels ---------------- */
+const LEVELS = [
+  { name: "Starter — C E G c",
     notes: [
-      { x: cx - r,     y: cy,       r: 10 },
-      { x: cx - r*0.2, y: cy - r*.9, r: 10 },
-      { x: cx + r*0.45,y: cy - r*.5, r: 10 },
-      { x: cx + r*.80, y: cy + r*.2, r: 10 },
+      { x: 520, y: 260, r: 11, pitch: 262 },
+      { x: 660, y: 320, r: 11, pitch: 330 },
+      { x: 820, y: 380, r: 11, pitch: 392 },
+      { x: 960, y: 430, r: 11, pitch: 523 },
     ],
-    goal: { x: cx + r*1.2, y: cy + r*0.5, r: 16 },
-  };
+    goal: { x: 1020, y: 480, r: 18 },
+  },
+  { name: "Arc — A B d e",
+    notes: [
+      { x: 520, y: 220, r: 11, pitch: 440 },
+      { x: 680, y: 260, r: 11, pitch: 494 },
+      { x: 820, y: 300, r: 11, pitch: 587 },
+      { x: 980, y: 340, r: 11, pitch: 659 },
+    ],
+    goal: { x: 1080, y: 420, r: 18 },
+  },
+  { name: "Sweep — G B d g",
+    notes: [
+      { x: 500, y: 400, r: 11, pitch: 392 },
+      { x: 650, y: 360, r: 11, pitch: 494 },
+      { x: 800, y: 320, r: 11, pitch: 587 },
+      { x: 950, y: 280, r: 11, pitch: 784 },
+    ],
+    goal: { x: 1040, y: 250, r: 18 },
+  },
+  { name: "Cross — C D F A",
+    notes: [
+      { x: 520, y: 470, r: 11, pitch: 262 },
+      { x: 660, y: 330, r: 11, pitch: 294 },
+      { x: 820, y: 470, r: 11, pitch: 349 },
+      { x: 960, y: 330, r: 11, pitch: 440 },
+    ],
+    goal: { x: 1040, y: 390, r: 18 },
+  },
+  { name: "Spiral — D F A c",
+    notes: [
+      { x: 520, y: 300, r: 11, pitch: 294 },
+      { x: 650, y: 380, r: 11, pitch: 349 },
+      { x: 780, y: 420, r: 11, pitch: 440 },
+      { x: 920, y: 360, r: 11, pitch: 523 },
+    ],
+    goal: { x: 1060, y: 300, r: 18 },
+  },
+];
+
+function applyLevel(i) {
+  const L = LEVELS[i] || LEVELS[0];
+  level = { name: L.name, notes: L.notes.map(n => ({...n})), goal: {...L.goal} };
+  nextNoteIndex = 0; t = 0;
 }
 
-function applyShareParam() {
-  const url = new URL(location.href);
-  const g = url.hash.startsWith("#g=") ? url.hash.slice(3) : url.searchParams.get("g");
-  if (!g) { starterLevel(); return; }
-  try {
-    const obj = JSON.parse(ub64u(g));
-    if (obj.level) level = obj.level;
-    if (Array.isArray(obj.planets)) planets = obj.planets;
-    if (obj.opts) {
-      ({ G = G, ultraPhysics = ultraPhysics, wallsBounce = wallsBounce, useTimeDilation = useTimeDilation } = obj.opts);
-    }
-  } catch {
-    starterLevel();
-  }
+/* --------------- Audio --------------- */
+let AC, master;
+function ensureAudio() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain();
+  master.gain.value = 0.25; // louder than before
+  master.connect(AC.destination);
+}
+function beep(freq, dur = 0.12) {
+  if (!ui.audio.checked) return;
+  ensureAudio();
+  const o = AC.createOscillator();
+  const g = AC.createGain();
+  o.type = "sine";
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, AC.currentTime);
+  g.gain.linearRampToValueAtTime(0.8, AC.currentTime + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur);
+  o.connect(g).connect(master);
+  o.start();
+  o.stop(AC.currentTime + dur + 0.02);
 }
 
-function packShare() {
-  return { level, planets, opts: { G, ultraPhysics, wallsBounce, useTimeDilation } };
+/* --------------- UI ---------------- */
+const ui = {};
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
 }
-function updateShareURL() {
-  const packed = b64u(JSON.stringify(packShare()));
-  history.replaceState(null, "", "#g=" + packed);
-}
-
-// ================= Worker =================
-function initWorker() {
-  try {
-    worker = new Worker("./worker.js", { type: "module" });
-  } catch {
-    worker = new Worker("./worker.js");
-  }
-  worker.onmessage = (e) => {
-    const msg = e.data;
-    if (msg.type === "state") {
-      if (msg.puck) puck = msg.puck;
-      running = !!msg.running;
-      simTime = msg.t ?? simTime;
-      nextNoteIndex = msg.nextNoteIndex ?? nextNoteIndex;
-    } else if (msg.type === "event") {
-      if (msg.name === "goal") { running = false; onGoal(msg.data?.score ?? 0); }
-      if (msg.name === "crash" || msg.name === "oob") { running = false; }
-    }
-  };
-  worker.postMessage({
-    type: "init",
-    opts: { W: canvas.width, H: canvas.height, G, ultraPhysics, wallsBounce, useTimeDilation },
-    planets, level,
-  });
-  workerReady = true;
-}
-function syncLevelToWorker() { if (workerReady) worker.postMessage({ type: "updateLevel", level }); }
-function syncPlanetsToWorker() { if (workerReady) worker.postMessage({ type: "updatePlanets", planets }); }
-function setRunning(flag) { if (workerReady) worker.postMessage({ type: "setRunning", running: !!flag }); }
-function resetSim() { if (workerReady) worker.postMessage({ type: "reset" }); running = false; trail.length = 0; }
-
-// ================= Drawing =================
-function drawGrid() {
-  const W = canvas.width, H = canvas.height, step = 40 * DPR();
-  ctx.fillStyle = "#0b1016"; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = (W % step); x < W; x += step) { ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, H); }
-  for (let y = (H % step); y < H; y += step) { ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); }
-  ctx.stroke();
+function chk(label, checked, container) {
+  const w = el("label", "check");
+  const c = el("input"); c.type = "checkbox"; c.checked = !!checked;
+  const s = el("span", null, label);
+  w.append(c, s);
+  (container || document.body).appendChild(w);
+  return c;
 }
 
-function drawPlanets() {
-  for (const p of planets) {
-    ctx.strokeStyle = "rgba(180,170,255,0.15)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 1.4, 0, Math.PI * 2); ctx.stroke();
-    const g = ctx.createRadialGradient(p.x - p.r * .4, p.y - p.r * .4, 2, p.x, p.y, p.r);
-    g.addColorStop(0, "#a88cff"); g.addColorStop(1, "#5d42b9");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-  }
-}
+/* Panel */
+const panel = el("div", "panel");
+const title = el("div", "title");
+title.innerHTML = `<strong>GraviScore</strong><span>Compose with Gravity</span>`;
+const btnHelp = el("button", "chip", "Help");
+const btnHide = el("button", "chip", "Hide");
+title.append(btnHelp, btnHide);
+panel.append(title);
 
-function drawLevel() {
-  level.notes.forEach((n, i) => {
-    const on = i < nextNoteIndex;
-    ctx.fillStyle = on ? "#68ffc0" : "#91f0ff";
-    ctx.globalAlpha = on ? 0.55 : 0.9;
-    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  });
-  ctx.strokeStyle = "#7cf9a0"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(level.goal.x, level.goal.y, level.goal.r, 0, Math.PI * 2); ctx.stroke();
-}
+/* Row 1: main buttons + stats */
+const row1 = el("div", "row");
+ui.launch = el("button", "btn", "Launch");
+ui.reset = el("button", "btn", "Reset");
+ui.clear = el("button", "btn", "Clear Planets");
+const stats = el("span", "stats", "");
+row1.append(ui.launch, ui.reset, ui.clear, stats);
+panel.append(row1);
 
-function drawPuckTrail() {
-  if (trailsEnabled && trail.length > 1) {
-    ctx.strokeStyle = "rgba(120,180,255,0.35)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(trail[0].x, trail[0].y);
-    for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
-    ctx.stroke();
-  }
-  const r = puck.r;
-  const g = ctx.createRadialGradient(puck.x - r * .4, puck.y - r * .4, 2, puck.x, puck.y, r);
-  g.addColorStop(0, "#ffe7a8"); g.addColorStop(1, "#c48a2d");
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(puck.x, puck.y, r, 0, Math.PI * 2); ctx.fill();
-}
+/* Row 2: physics toggles */
+const row2 = el("div", "row");
+ui.trails = chk("Trails", true, row2);
+ui.audio = chk("Audio", true, row2);
+ui.ultra = chk("Ultra Physics", true, row2);
+ui.walls = chk("Walls Bounce", true, row2);
+ui.td = chk("Time Dilation", true, row2);
+panel.append(row2);
 
-// ================= UI lengkap =================
-function setupUI() {
-  const root = document.getElementById("ui-root");
-  root.innerHTML = `
-    <div class="panel" id="panel">
-      <div class="row">
-        <button id="btnLaunch">▶ Launch</button>
-        <button id="btnReset">↺ Reset</button>
-        <button id="btnClear">✖ Clear Planets</button>
-        <div class="right">
-          <button id="btnHelp">Help</button>
-          <button id="btnHide">Hide</button>
-        </div>
-      </div>
-
-      <div class="row">
-        <label><input type="checkbox" id="chkTrails" checked> Trails</label>
-        <label><input type="checkbox" id="chkAudio"> Audio</label>
-        <label><input type="checkbox" id="chkUltra" checked> Ultra Physics</label>
-        <label><input type="checkbox" id="chkWalls" checked> Walls Bounce</label>
-        <label><input type="checkbox" id="chkTime" checked> Time Dilation</label>
-      </div>
-
-      <div class="row">
-        <span class="badge" id="badgeCounts">Planets: 0/6 &nbsp; Notes: 0/4</span>
-        <span class="badge right" id="badgeTimer">Idle</span>
-      </div>
-
-      <div class="row">
-        <button id="btnUndo">↑ Undo Planet</button>
-        <label><input type="checkbox" id="chkEdit"> Edit Mode</label>
-        <button id="btnExport">⬆ Export JSON</button>
-        <button id="btnImport">⬇ Import JSON</button>
-      </div>
-
-      <div class="row">
-        <label><input type="checkbox" id="chkDaily"> Daily</label>
-        <button id="btnShare">🔗 Share Link</button>
-        <input id="inpName" placeholder="Name (optional)" value="${playerName}">
-        <button id="btnTop">🏆 Top 10</button>
-        <button id="btnPing">🔈 Ping</button>
-      </div>
-    </div>
-  `;
-
-  // Modal Top 10 + Help
-  injectModalStyles();
-  createModalContainers();
-
-  const helpBox = document.getElementById("helpBox");
-  document.getElementById("btnHelp").onclick = () => helpBox.classList.toggle("hidden");
-  document.getElementById("btnHelpClose").onclick = () => helpBox.classList.add("hidden");
-  document.getElementById("btnHide").onclick = () => document.getElementById("panel").classList.toggle("hidden");
-
-  // Tombol utama
-  assign("#btnLaunch", () => { running = true; setRunning(true); });
-  assign("#btnReset",  () => resetSim());
-  assign("#btnClear",  () => { lastRemoved = null; planets = []; syncPlanetsToWorker(); updateShareURL(); updateBadges(); });
-
-  assign("#btnUndo", () => {
-    if (lastRemoved) { planets.push(lastRemoved); lastRemoved = null; syncPlanetsToWorker(); updateShareURL(); updateBadges(); }
-  });
-
-  // Toggles
-  onChange("#chkTrails", v => trailsEnabled = v);
-  onChange("#chkAudio",  v => audioEnabled = v);
-  onChange("#chkUltra",  v => { ultraPhysics = v; if (workerReady) worker.postMessage({type:"setOptions", opts:{ultraPhysics}}); });
-  onChange("#chkWalls",  v => { wallsBounce  = v; if (workerReady) worker.postMessage({type:"setOptions", opts:{wallsBounce}}); });
-  onChange("#chkTime",   v => { useTimeDilation = v; if (workerReady) worker.postMessage({type:"setOptions", opts:{useTimeDilation}}); });
-  onChange("#chkEdit",   v => { editMode = v; });
-
-  // Import/Export
-  assign("#btnExport", () => {
-    const blob = new Blob([JSON.stringify(packShare(), null, 2)], { type: "application/json" });
-    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "graviscore-level.json" });
-    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
-  });
-  assign("#btnImport", () => {
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
-    inp.onchange = () => {
-      const f = inp.files?.[0]; if (!f) return;
-      f.text().then(t => {
-        try {
-          const obj = JSON.parse(t);
-          if (obj.level) level = obj.level;
-          if (Array.isArray(obj.planets)) planets = obj.planets;
-          if (obj.opts) ({ G = G, ultraPhysics = ultraPhysics, wallsBounce = wallsBounce, useTimeDilation = useTimeDilation } = obj.opts);
-          syncLevelToWorker(); syncPlanetsToWorker(); updateShareURL(); updateBadges();
-        } catch { alert("Invalid JSON"); }
-      });
-    };
-    inp.click();
-  });
-
-  // Sharing & Daily
-  onChange("#chkDaily", v => { daily = v; seed = daily ? todaySeed() : "level:0"; });
-  assign("#btnShare", () => { updateShareURL(); navigator.clipboard?.writeText(location.href); });
-
-  // Name
-  const nameInp = document.getElementById("inpName");
-  nameInp.oninput = (e) => { playerName = e.target.value.slice(0, 24); localStorage.setItem("gravi_name", playerName); };
-
-  // Top 10 (modal)
-  assign("#btnTop", async () => {
-    try {
-      const api = (window.Leaderboard?.selectBackend?.("sheets")) || window.Leaderboard;
-      const rows = await api.fetchTop(seed, 10);
-      showTopModal(rows, seed);
-    } catch {
-      alert("Failed to fetch Top 10.");
-    }
-  });
-
-  // Ping (test audio)
-  assign("#btnPing", () => {
-    if (!audioEnabled) return;
-    try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.001, audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.22);
-      o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.25);
-    } catch {}
-  });
-
-  updateBadges();
-}
-
-// Helpers kecil untuk UI
-function assign(sel, fn){ const el=document.querySelector(sel); if(el) el.onclick=fn; }
-function onChange(sel, fn){ const el=document.querySelector(sel); if(el) el.onchange=e=>fn(!!e.target.checked); }
-function updateBadges(){
-  const badge = document.getElementById("badgeCounts");
-  if (badge) badge.textContent = `Planets: ${planets.length}/6   Notes: ${level.notes.length}/4`;
-}
-
-// ================= Interaksi canvas (place/undo/drag) =================
-canvas.addEventListener("contextmenu", e => e.preventDefault());
-
-canvas.addEventListener("mousedown", (e) => {
-  const pos = toWorld(e);
-
-  if (editMode) {
-    // drag notes / goal
-    const hit = level.notes.findIndex(n => Math.hypot(n.x - pos.x, n.y - pos.y) <= n.r + 6);
-    if (hit >= 0) { const n = level.notes[hit]; drag = { type: "note", index: hit, dx: pos.x - n.x, dy: pos.y - n.y }; return; }
-    const dg = Math.hypot(level.goal.x - pos.x, level.goal.y - pos.y);
-    if (dg <= level.goal.r + 8) { drag = { type: "goal", dx: pos.x - level.goal.x, dy: pos.y - level.goal.y }; return; }
-    return; // editMode: tidak place planet
-  }
-
-  if (e.button === 2) { // right-click = remove nearest
-    if (!planets.length) return;
-    let bi = 0, bd = 1e12;
-    for (let i = 0; i < planets.length; i++) {
-      const d = (planets[i].x - pos.x) ** 2 + (planets[i].y - pos.y) ** 2;
-      if (d < bd) { bd = d; bi = i; }
-    }
-    lastRemoved = planets.splice(bi, 1)[0] || null;
-    syncPlanetsToWorker(); updateShareURL(); updateBadges();
-  } else if (e.button === 0) {
-    if (planets.length >= 6) return;
-    planets.push({ x: pos.x, y: pos.y, r: 15, mass: 1 });
-    syncPlanetsToWorker(); updateShareURL(); updateBadges();
-  }
+/* Row 3: level select */
+const row3 = el("div", "row");
+const levelLabel = el("span", "label", "Level:");
+ui.level = document.createElement("select");
+ui.level.className = "select";
+LEVELS.forEach((L, i) => {
+  const opt = document.createElement("option");
+  opt.value = i; opt.textContent = L.name;
+  ui.level.appendChild(opt);
 });
+row3.append(levelLabel, ui.level);
+panel.append(row3);
 
-canvas.addEventListener("mousemove", (e) => {
+/* Row 4: actions */
+const row4 = el("div", "row");
+ui.ping = el("button", "btn", "Ping");
+const btnTop = el("button", "btn", "🏆 Top 10");
+row4.append(ui.ping, btnTop);
+panel.append(row4);
+
+/* Row 5: accessibility */
+const row5 = el("div", "row");
+ui.rm = chk("Reduced Motion", false, row5);
+ui.hc = chk("High Contrast", false, row5);
+ui.hap = chk("Haptics", true, row5);
+const timeLbl = el("span", "label", "Time 0.00s");
+const scoreLbl = el("span", "label", "Score —");
+row5.append(timeLbl, scoreLbl);
+panel.append(row5);
+
+document.body.appendChild(panel);
+
+/* Drag panel from title */
+let drag = null;
+title.addEventListener("pointerdown", (e) => {
+  drag = { x0: e.clientX, y0: e.clientY, left0: panel.offsetLeft, top0: panel.offsetTop };
+  title.setPointerCapture(e.pointerId);
+});
+title.addEventListener("pointermove", (e) => {
   if (!drag) return;
-  const pos = toWorld(e);
-  if (drag.type === "note") {
-    const n = level.notes[drag.index];
-    n.x = pos.x - drag.dx; n.y = pos.y - drag.dy;
-    syncLevelToWorker(); updateShareURL();
-  } else {
-    level.goal.x = pos.x - drag.dx; level.goal.y = pos.y - drag.dy;
-    syncLevelToWorker(); updateShareURL();
-  }
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  panel.style.left = Math.max(8, drag.left0 + dx) + "px";
+  panel.style.top = Math.max(8, drag.top0 + dy) + "px";
 });
-window.addEventListener("mouseup", () => drag = null);
+title.addEventListener("pointerup", () => (drag = null));
 
-// ================= Submit skor =================
-async function onGoal(score) {
-  try {
-    const api = (window.Leaderboard?.selectBackend?.("sheets")) || window.Leaderboard;
-    await api.submit({ seed, score, planets: planets.length, uid, name: playerName || null, when: Date.now() });
-    showToast(`Goal! Score: ${score}`);
-  } catch (e) {
-    console.warn("submit failed", e);
-    showToast("Submit score failed.");
+/* Help dock (right, like your previous UI) */
+const helpDock = el("div", "helpdock");
+helpDock.innerHTML = `
+  <div class="helphead"><strong>How to play</strong> <button class="chip" data-x>✕</button></div>
+  <ol>
+    <li>Place up to 6 planets.</li>
+    <li>Press <em>Launch</em>.</li>
+    <li>Touch notes in order to unlock the goal.</li>
+    <li>Reach the goal.</li>
+  </ol>
+  <p>New: Daily seed, Level editor basics, Web Share Target, Badging/Haptics, Accessibility toggles.</p>
+`;
+document.body.appendChild(helpDock);
+helpDock.querySelector("[data-x]").onclick = () => (helpDock.style.display = "none");
+btnHelp.onclick = () => (helpDock.style.display = "block");
+btnHide.onclick = () => (panel.style.display = "none");
+
+/* Top 10 modal */
+const top10 = el("div", "modal");
+top10.innerHTML = `
+  <div class="card">
+    <div class="card-head"><strong>Top 10</strong><button class="chip" data-x>✕</button></div>
+    <div class="list" data-body>Loading…</div>
+  </div>`;
+document.body.appendChild(top10);
+top10.querySelector("[data-x]").onclick = () => (top10.style.display = "none");
+
+btnTop.onclick = async () => {
+  const body = top10.querySelector("[data-body]");
+  if (!window.Leaderboard) {
+    body.textContent = "Leaderboard module not found.";
+  } else {
+    try {
+      const api = window.Leaderboard.selectBackend?.("sheets") || window.Leaderboard;
+      const rows = await api.fetchTop(`level:${ui.level.value}`, 10);
+      body.innerHTML = rows.map((r,i)=>(
+        `<div class="rowline"><span>${i+1}.</span><span>${r.name??"anon"}</span><span>${r.score}</span></div>`
+      )).join("") || "No scores yet.";
+    } catch(e) {
+      console.warn(e);
+      body.textContent = "Failed to load scores.";
+    }
   }
-}
+  top10.style.display = "block";
+};
 
-// ================= Modal Top 10 + Toast =================
-function injectModalStyles(){
-  if (document.getElementById("modalStyles")) return;
-  const css = `
-  .hidden{display:none}
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;z-index:50}
-  .modal{background:#0f141c;border:1px solid #2a3442;border-radius:14px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.45)}
-  .modal header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #243042}
-  .modal h3{margin:0;font:600 16px system-ui;color:#dbe9ff}
-  .modal .body{padding:10px 14px;color:#cfe3ff}
-  .table{width:100%;border-collapse:collapse}
-  .table th,.table td{padding:8px;border-bottom:1px solid #223040;text-align:left;font:13px system-ui}
-  .iconbtn{background:#1a2738;border:1px solid #2a3b53;color:#d6eaff;border-radius:8px;padding:6px 10px;cursor:pointer}
-  .toast{position:fixed;left:12px;bottom:12px;background:#122033;color:#d9ecff;border:1px solid #29405a;border-radius:10px;padding:8px 12px;z-index:60}
-  `;
-  const style = document.createElement("style");
-  style.id = "modalStyles"; style.textContent = css;
-  document.head.appendChild(style);
-}
+/* UI events */
+ui.level.onchange = () => { applyLevel(+ui.level.value); resetPuck(); };
+ui.launch.onclick = () => { ensureAudio(); running = true; };
+ui.reset.onclick  = () => { running = false; resetPuck(); };
+ui.clear.onclick  = () => { planets = []; };
+ui.ping.onclick   = () => { ensureAudio(); beep(660, 0.15); if (ui.hap.checked && navigator.vibrate) navigator.vibrate(30); };
+ui.hc.onchange    = () => { document.body.classList.toggle("hc", ui.hc.checked); };
+ui.rm.onchange    = () => { /* Reduced motion => just hide trails */ };
+ui.hap.onchange   = () => { /* nothing to do here */ };
 
-function createModalContainers(){
-  if(document.getElementById("topBackdrop")){
-    // pastikan handler global tetap ada
-    addGlobalModalHandlers();
+/* Input: place / remove planets */
+canvas.addEventListener("contextmenu", (e)=>e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  if (e.button === 2) {
+    if (!planets.length) return;
+    let k = 0, best = 1e9;
+    planets.forEach((p,i)=>{ const d=(p.x-x)**2+(p.y-y)**2; if (d<best){best=d;k=i;} });
+    planets.splice(k,1);
     return;
   }
-  // Help box (tetap simpel)
-  if(!document.getElementById("helpBox")){
-    const hb = document.createElement("div");
-    hb.id="helpBox"; hb.className="hidden";
-    hb.style.cssText="position:fixed;top:16px;right:16px;background:#0f141c;border:1px solid #283548;border-radius:12px;padding:12px 14px;color:#d7e7ff;z-index:40;max-width:380px";
-    hb.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <strong>How to play</strong>
-      <button id="btnHelpClose" class="iconbtn">✕</button>
-    </div>
-    <ol style="margin:0 0 6px 18px;padding:0">
-      <li>Place up to six planets, then press Launch.</li>
-      <li>Touch the glowing notes in order to unlock the goal.</li>
-      <li>Reach the goal to finish and score.</li>
-      <li>Right-click removes the nearest planet. Use <em>Edit Mode</em> to drag notes & goal.</li>
-    </ol>
-    <small>Tip: click <em>Ping</em> once if the browser mutes audio.</small>`;
-    document.body.appendChild(hb);
+  if (planets.length < WORLD.maxPlanets) planets.push({ x, y, r: 18, mass: 1.0 });
+});
+
+/* Physics */
+function step(dt) {
+  if (ui.td.checked) {
+    for (const p of planets) {
+      const d = Math.hypot(p.x - puck.x, p.y - puck.y);
+      if (d < p.r * 1.8) dt *= 0.85;
+    }
   }
 
-  // Top 10 modal
-  const wrap = document.createElement("div");
-  wrap.id = "topBackdrop"; wrap.className = "modal-backdrop hidden";
-  wrap.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="topTitle">
-      <header>
-        <h3 id="topTitle">Top 10</h3>
-        <button id="btnTopClose" class="iconbtn" aria-label="Close">✕</button>
-      </header>
-      <div class="body">
-        <div id="topCaption" class="muted" style="margin-bottom:8px"></div>
-        <table class="table" id="topTable"></table>
-      </div>
-    </div>`;
-  document.body.appendChild(wrap);
+  let ax=0, ay=0;
+  for (const p of planets) {
+    const dx=p.x-puck.x, dy=p.y-puck.y;
+    const d2=dx*dx+dy*dy, d=Math.sqrt(d2)+1e-6;
+    const f=(WORLD.G*p.mass)/(d2+200);
+    ax+=(dx/d)*f; ay+=(dy/d)*f;
 
-  // handler close (backdrop, tombol, Esc)
-  addGlobalModalHandlers();
-}
-
-function addGlobalModalHandlers(){
-  const bd = document.getElementById("topBackdrop");
-  if(!bd) return;
-  bd.onclick = (e)=>{ if(e.target === bd) hideTopModal(); };
-  const btn = document.getElementById("btnTopClose");
-  if(btn) btn.onclick = hideTopModal;
-  // Esc — add once
-  if(!window.__graviEscBound){
-    window.addEventListener("keydown", (e)=>{ if(e.key === "Escape") hideTopModal(); });
-    window.__graviEscBound = true;
+    if (d < p.r + puck.r) { running=false; beep(120,0.12); if (ui.hap.checked && navigator.vibrate) navigator.vibrate([20,30,20]); return; }
   }
+  const maxA=4000, mag=Math.hypot(ax,ay);
+  if (mag>maxA){ ax*=maxA/mag; ay*=maxA/mag; }
+  puck.vx+=ax*dt; puck.vy+=ay*dt;
+  puck.x+=puck.vx*dt; puck.y+=puck.vy*dt;
+
+  if (ui.walls.checked){
+    if (puck.x < puck.r){ puck.x=puck.r; puck.vx=Math.abs(puck.vx)*0.9; }
+    if (puck.x > WORLD.W()-puck.r){ puck.x=WORLD.W()-puck.r; puck.vx=-Math.abs(puck.vx)*0.9; }
+    if (puck.y < puck.r){ puck.y=puck.r; puck.vy=Math.abs(puck.vy)*0.9; }
+    if (puck.y > WORLD.H()-puck.r){ puck.y=WORLD.H()-puck.r; puck.vy=-Math.abs(puck.vy)*0.9; }
+  } else {
+    if (puck.x<-50||puck.x>WORLD.W()+50||puck.y<-50||puck.y>WORLD.H()+50){ running=false; beep(180,0.1); return; }
+  }
+
+  // note
+  const glow = level.notes[nextNoteIndex];
+  if (glow){
+    const d = Math.hypot(glow.x - puck.x, glow.y - puck.y);
+    if (d < glow.r + puck.r){ beep(glow.pitch||660,0.12); nextNoteIndex++; }
+  }
+
+  // goal
+  if (nextNoteIndex===level.notes.length && level.notes.length){
+    const d=Math.hypot(level.goal.x-puck.x, level.goal.y-puck.y);
+    if (d < level.goal.r + puck.r){
+      running=false; const timeBonus=Math.max(0,12-t); const penalty=planets.length*1.2;
+      const score=Math.max(1, Math.round(100 + timeBonus*8 - penalty));
+      beep(880,0.18); if (ui.hap.checked && navigator.vibrate) navigator.vibrate([30,40,30]);
+
+      // submit
+      try{
+        if (window.Leaderboard){
+          const api = window.Leaderboard.selectBackend?.("sheets") || window.Leaderboard;
+          const uid = localStorage.getItem("gravi_uid") || (localStorage.setItem("gravi_uid", crypto.randomUUID()), localStorage.getItem("gravi_uid"));
+          const name = (localStorage.getItem("gravi_name")||"").trim() || "anon";
+          api.submit({ seed:`level:${ui.level.value}`, score, planets:planets.length, uid, name, when:Date.now() });
+        }
+      }catch(e){ console.warn("[submit]", e); }
+
+      scoreLbl.textContent = "Score " + score;
+    }
+  }
+
+  // trail
+  if (!ui.rm.checked && ui.trails.checked){
+    trail.push({x:puck.x,y:puck.y});
+    if (trail.length>TRAIL_MAX) trail.shift();
+  }
+  t += dt;
+  timeLbl.textContent = "Time " + t.toFixed(2) + "s";
 }
 
-function showTopModal(rows, seed){
-  // pastikan container ada & rebinding tombol setiap buka
-  createModalContainers();
-  addGlobalModalHandlers();
-
-  const bd = document.getElementById("topBackdrop");
-  const tbl = document.getElementById("topTable");
-  const cap = document.getElementById("topCaption");
-  cap.textContent = `Seed: ${seed}`;
-  tbl.innerHTML = `<tr><th>#</th><th>Name</th><th>Score</th><th>Planets</th></tr>` +
-    (rows && rows.length ? rows : []).map((r,i)=>`<tr><td>${i+1}</td><td>${r.name||"—"}</td><td>${r.score}</td><td>${r.planets}</td></tr>`).join("");
-  bd.classList.remove("hidden");
+/* Render */
+function drawGrid() {
+  const w=WORLD.W(), h=WORLD.H();
+  ctx.fillStyle = "#0b1217";
+  ctx.fillRect(0,0,w,h);
+  const gridCol = document.body.classList.contains("hc") ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)";
+  ctx.strokeStyle = gridCol; ctx.lineWidth=1; const g=40;
+  for (let x=(w%g); x<w; x+=g){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for (let y=(h%g); y<h; y+=g){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
 }
-function hideTopModal(){ const bd=document.getElementById("topBackdrop"); if(bd) bd.classList.add("hidden"); }
+function draw(){
+  drawGrid();
 
-function showToast(msg){
-  const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t);
-  setTimeout(()=>t.remove(), 1600);
-}
+  // planets
+  for (const p of planets){
+    ctx.fillStyle = "#7a6df6";
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "rgba(122,109,246,.25)";
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*1.6,0,Math.PI*2); ctx.stroke();
+  }
 
-// ================= Main loop =================
-let lastTs = 0;
-function loop(ts) {
-  if (!lastTs) lastTs = ts;
-  const dt = Math.min(0.05, (ts - lastTs) / 1000);
-  lastTs = ts;
-
-  if (running && workerReady) worker.postMessage({ type: "step", dt });
-
-  drawGrid(); drawLevel(); drawPlanets();
-
-  if (running) { trail.push({ x: puck.x, y: puck.y }); if (trail.length > TRAIL_MAX) trail.shift(); }
-  else if (trail.length) { if (trail.length > 4) trail.shift(); }
-  drawPuckTrail();
-
-  const timer = document.getElementById("badgeTimer");
-  if (timer) timer.textContent = running ? `${simTime.toFixed(2)}s` : "Idle";
-
-  requestAnimationFrame(loop);
-}
-
-// ================= Init =================
-function init() {
-  rescaleCanvas();
-  applyShareParam();                // load dari URL (kalau ada)
-  if (!level?.notes?.length) starterLevel();
-  updateShareURL();                 // simpan kembali ke URL
-
-  setupUI();
-  initWorker();
-  syncLevelToWorker(); syncPlanetsToWorker();
-
-  window.addEventListener("resize", () => {
-    rescaleCanvas();
-    if (workerReady) worker.postMessage({
-      type: "init",
-      opts: { W: canvas.width, H: canvas.height, G, ultraPhysics, wallsBounce, useTimeDilation },
-      planets, level
-    });
+  // notes
+  level.notes.forEach((n,i)=>{
+    ctx.fillStyle = i<nextNoteIndex ? "#66e3c4" : "#8ad8ff";
+    ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fill();
   });
 
-  seed = daily ? todaySeed() : "level:0";
-  requestAnimationFrame(loop);
+  // goal
+  ctx.strokeStyle = "#8fffb1"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(level.goal.x, level.goal.y, level.goal.r, 0, Math.PI*2); ctx.stroke();
+
+  // trail
+  if (!ui.rm.checked && ui.trails.checked){
+    ctx.strokeStyle = "rgba(255,255,255,.18)";
+    ctx.beginPath();
+    trail.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    ctx.stroke();
+  }
+
+  // puck
+  ctx.fillStyle = "#b8dbff";
+  ctx.beginPath(); ctx.arc(puck.x,puck.y,puck.r,0,Math.PI*2); ctx.fill();
+
+  stats.textContent = `Planets: ${planets.length}/${WORLD.maxPlanets}   Notes: ${level.notes.length}`;
 }
 
-init();
+/* Loop */
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(0.05, (now-last)/1000); last=now;
+  if (running){
+    const sub = ui.ultra.checked ? 3 : 1, sdt = dt/sub;
+    for (let i=0;i<sub;i++) step(sdt);
+  }
+  draw();
+  requestAnimationFrame(tick);
+}
+
+/* Styles */
+const style = document.createElement("style");
+style.textContent = `
+  html,body{margin:0;height:100%;background:#0b1217;color:#dde7f2;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overflow:hidden}
+  .panel{position:fixed;left:16px;top:16px;max-width:760px;background:rgba(18,28,36,.9);border:1px solid rgba(255,255,255,.08);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:12px 12px 14px;backdrop-filter: blur(6px)}
+  .title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;cursor:grab}
+  .title strong{font-weight:700}
+  .title span{opacity:.75;font-size:.9rem;margin-left:8px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .btn,.chip{background:#1a2631;border:1px solid rgba(255,255,255,.12);color:#eaf4ff;border-radius:10px;padding:8px 10px;font-weight:600}
+  .btn:hover,.chip:hover{background:#223141}
+  .check{display:inline-flex;align-items:center;gap:6px;user-select:none}
+  .check input{width:16px;height:16px}
+  .select{background:#0f1720;color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:6px 8px}
+  .label{opacity:.75}
+  .stats{opacity:.75;margin-left:6px}
+  .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.45);z-index:30}
+  .modal .card{min-width:360px;max-width:560px;background:#0f1720;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .list .rowline{display:grid;grid-template-columns:2ch 1fr auto;gap:10px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
+  .helpdock{position:fixed;right:16px;top:16px;width:340px;background:rgba(18,28,36,.92);border:1px solid rgba(255,255,255,.08);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:12px;display:block;z-index:20}
+  .helphead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  body.hc .panel, body.hc .helpdock{border-color:rgba(255,255,255,.20)}
+`;
+document.head.appendChild(style);
+
+/* Init */
+applyLevel(0);
+resetPuck();
+requestAnimationFrame(tick);
+
+/* Footer credit (single, avoid duplicates) */
+if (!document.querySelector('#credit')) {
+    const credit = document.createElement('div');
+    credit.id = 'credit';
+    credit.style.position = 'fixed';
+    credit.style.left = '10px';
+    credit.style.bottom = '10px';
+    credit.style.opacity = '.6';
+    credit.style.fontSize = '.9rem';
+    credit.innerHTML = `GraviScore — by <a href="https://github.com/wiqile" target="_blank" rel="noopener" style="color:#8ad8ff">@wiqile</a>`;
+    document.body.appendChild(credit);
+  }
+  
