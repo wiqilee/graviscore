@@ -3,12 +3,15 @@
 A musical gravity puzzler by **@wiqile** (2025).  
 Place up to six mini-planets, launch the puck, hit the glowing notes **in order**, then reach the goal. Build a melody with physics.
 
-- **Daily Challenge** (date-based seeds)
-- **Level Editor** (drag notes & goal; saved in the Share link)
-- **Share Link** (packs level + planets into the URL)
-- **Dual Leaderboard**: Google Sheets (free, default) or optional Firebase
-- **Accessibility**: Reduced Motion, High Contrast, Haptics
-- **PWA-ready**: manifest + service worker
+- **NEW:** Puck color feedback (yellow → red on hit), light **vibration**, **GAME OVER** overlay + screen shake  
+- **NEW:** **Planet Bounce** (toggle) — bounce off planets instead of crashing  
+- **NEW:** **Auto Reset on Crash** (toggle) — auto relaunch after a crash  
+- **Daily Challenge** (date-based seeds)  
+- **Level Editor** (drag notes & goal; saved into the Share link)  
+- **Share Link** (packs level + edits into the URL)  
+- **Dual Leaderboard:** Google Sheets (free, default) or optional Firebase  
+- **Accessibility:** Reduced Motion, High Contrast, Haptics  
+- **PWA-ready:** manifest + service worker
 
 > **Required credit (license):** keep the on-screen footer **“GraviScore — by @wiqile”** and retain author attribution in source headers and the README.
 
@@ -35,9 +38,11 @@ https://<your-username>.github.io/graviscore/
 5) Toggle **Edit Mode** to drag notes/goal; your edits are embedded in the **Share Link**.  
 6) Click **Ping** once if your browser needs a user gesture to unlock audio.
 
-**Shortcuts:**  
-- **H** toggles the UI panel  
-- **J** toggles the “How to play” panel
+**Toggles to try:**
+- **Planet Bounce** — puck bounces on planets (no instant game over)  
+- **Auto Reset on Crash** — if crash occurs (with Planet Bounce off), auto-relaunch after ~0.5s  
+- **Trails / Ultra Physics / Walls / Time Dilation**  
+- **Reduced Motion / High Contrast / Haptics**
 
 ---
 
@@ -73,12 +78,12 @@ In `leaderboard.js`, set:
 const SHEETS_ENDPOINT = "https://script.google.com/.../exec";
 ```
 
-Reads are performed with `fetch(...?action=top)` (no auth) and submissions via `POST` (no CORS preflight needed on Pages).
+Reads use `?action=top` (no auth) and submissions are `POST` (no CORS preflight needed on Pages).
 
 **Server behavior**
 
-- Keeps the **best score per (seed, uid)**  
-- Allows **display-name updates** even when the score doesn’t improve  
+- Stores the **best score per (seed, uid)**  
+- Lets players **update display name** without improving the score  
 - **Rate limit:** one submission per (seed, uid) every **10 seconds**
 
 ---
@@ -129,7 +134,7 @@ Append a query or bump the version param when testing:
 ```
 https://<user>.github.io/graviscore/?cb=2
 <!-- or -->
-<script src="./main.js?v=13" defer></script>
+<script src="./main.js?v=14" defer></script>
 ```
 
 ---
@@ -139,7 +144,7 @@ https://<user>.github.io/graviscore/?cb=2
 ```
 graviscore/
 ├─ index.html
-├─ main.js                 # game, UI, editor, sharing
+├─ main.js                 # game, UI, editor, sharing (with bounce/auto-reset/game-over)
 ├─ leaderboard.js          # Sheets + Firebase adapters
 ├─ worker-path-fix.js      # (optional) worker path helper
 ├─ manifest.webmanifest
@@ -148,7 +153,7 @@ graviscore/
 │  ├─ icon-512.png
 │  └─ og.png               # 1200x630 Open Graph preview
 ├─ sw.js                   # (optional) service worker
-└─ .nojekyll               # required for GitHub Pages (recommended)
+└─ .nojekyll               # recommended for GitHub Pages
 ```
 
 ---
@@ -157,9 +162,9 @@ graviscore/
 
 - **Left-click** place planet; **right-click** removes the nearest planet  
 - **↑ Undo Planet** removes the last placed planet  
-- **Trails / Ultra Physics / Walls / Time Dilation** are toggleable  
-- **Reduced Motion** hides trails; **High Contrast** boosts visibility  
-- **Haptics** adds subtle vibration on mobile (where supported)  
+- **Walls** keep the puck in bounds; **Time Dilation** slows near gravity wells  
+- **Haptics** adds subtle vibration on supported devices  
+- Puck turns **red** briefly on impact; if **Planet Bounce** is off, a crash shows **GAME OVER** (press **Reset** or **Launch**)
 
 Scoring combines base points, a **time bonus**, and a small **planet penalty**.
 

@@ -1,10 +1,11 @@
 /* GraviScore — Compose with Gravity
-   Main script, no build step. 2025 © @wiqile (AGPL-3.0-or-later)
+   Main script; no build step. 2025 © @wiqile (AGPL-3.0-or-later)
    - Draggable control panel
-   - Help modal (dibuka dari tombol id="btn-help" → index.html yang handle)
+   - Help modal (opened via button id="btn-help"; handled in index.html)
    - 5 levels, Daily seed, Share Link
    - Edit Mode (drag notes/goal), Undo, Export/Import JSON
-   - Top 10 modal (Sheets), Ping louder
+   - Top 10 modal (Google Sheets), louder Ping
+   - NEW: yellow puck + red flash on collision, vibration, and GAME OVER effect
 */
 "use strict";
 
@@ -40,6 +41,11 @@ let t = 0;
 let trail = [];
 const TRAIL_MAX = 160;
 
+/* NEW: visual effects */
+let hitFlashUntil = 0;               // when to stop the red flash
+let shakeUntil = 0, shakeMag = 0;    // screen shake
+let gameOverShown = false, gameOverAlpha = 0;
+
 let level = { notes: [], goal: { x: 0, y: 0, r: 16 }, name: "Starter" };
 let nextNoteIndex = 0;
 
@@ -51,6 +57,11 @@ function resetPuck() {
   t = 0;
   nextNoteIndex = 0;
   trail.length = 0;
+
+  // reset effects
+  hitFlashUntil = 0;
+  shakeUntil = 0; shakeMag = 0;
+  gameOverShown = false; gameOverAlpha = 0;
 }
 
 /* ---------------- Levels ---------------- */
@@ -192,7 +203,7 @@ const panel = el("div", "panel");
 const title = el("div", "title");
 title.innerHTML = `<strong>GraviScore</strong><span>Compose with Gravity</span>`;
 const btnHelp = el("button", "chip", "Help");
-btnHelp.id = "btn-help"; // biar terhubung ke modal di index.html
+btnHelp.id = "btn-help"; // link to the modal in index.html
 const btnHide = el("button", "chip", "Hide");
 title.append(btnHelp, btnHide);
 panel.append(title);
@@ -200,8 +211,8 @@ panel.append(title);
 /* Row 1: main buttons + stats */
 const row1 = el("div", "row");
 ui.launch = el("button", "btn", "Launch");
-ui.reset = el("button", "btn", "Reset");
-ui.clear = el("button", "btn", "Clear Planets");
+ui.reset  = el("button", "btn", "Reset");
+ui.clear  = el("button", "btn", "Clear Planets");
 const stats = el("span", "stats", "");
 row1.append(ui.launch, ui.reset, ui.clear, stats);
 panel.append(row1);
@@ -209,10 +220,15 @@ panel.append(row1);
 /* Row 2: physics toggles */
 const row2 = el("div", "row");
 ui.trails = chk("Trails", true, row2);
-ui.audio = chk("Audio", true, row2);
-ui.ultra = chk("Ultra Physics", true, row2);
-ui.walls = chk("Walls Bounce", true, row2);
-ui.td = chk("Time Dilation", true, row2);
+ui.audio  = chk("Audio", true, row2);
+ui.ultra  = chk("Ultra Physics", true, row2);
+ui.walls  = chk("Walls Bounce", true, row2);
+ui.td     = chk("Time Dilation", true, row2);
+
+/* NEW: extra options */
+ui.pbounce   = chk("Planet Bounce", false, row2);       // bounce when colliding with a planet
+ui.autoReset = chk("Auto Reset on Crash", false, row2); // automatically reset on crash
+
 panel.append(row2);
 
 /* Row 3: level/daily/share/name */
@@ -248,17 +264,17 @@ panel.append(row4);
 
 /* Row 5: accessibility */
 const row5 = el("div", "row");
-ui.rm = chk("Reduced Motion", false, row5);
-ui.hc = chk("High Contrast", false, row5);
+ui.rm  = chk("Reduced Motion", false, row5);
+ui.hc  = chk("High Contrast", false, row5);
 ui.hap = chk("Haptics", true, row5);
-const timeLbl = el("span", "label", "Time 0.00s");
+const timeLbl  = el("span", "label", "Time 0.00s");
 const scoreLbl = el("span", "label", "Score —");
 row5.append(ui.rm, ui.hc, ui.hap, timeLbl, scoreLbl);
 panel.append(row5);
 
 document.body.appendChild(panel);
 
-/* ---------- HELP OPEN/CLOSE (fix) ---------- */
+/* ---------- HELP OPEN/CLOSE (fixed) ---------- */
 const helpEl = document.getElementById("helpBox");
 const helpClose = document.getElementById("btnHelpClose");
 function openHelp(){ if (helpEl){ helpEl.classList.remove("hidden"); helpEl.style.zIndex = "30"; } }
@@ -266,10 +282,10 @@ function closeHelp(){ if (helpEl){ helpEl.classList.add("hidden"); } }
 btnHelp.addEventListener("click", (e)=>{ e.stopPropagation(); openHelp(); });
 helpClose?.addEventListener("click", (e)=>{ e.stopPropagation(); closeHelp(); });
 
-/* Drag panel dari title — JANGAN drag kalau klik tombol */
+/* Drag the panel by the title — do not drag when clicking buttons */
 let drag = null;
 title.addEventListener("pointerdown", (e) => {
-  if (e.target.closest && e.target.closest("button")) return; // penting: klik tombol tidak memicu drag
+  if (e.target.closest && e.target.closest("button")) return;
   drag = { x0: e.clientX, y0: e.clientY, left0: panel.offsetLeft, top0: panel.offsetTop };
   title.setPointerCapture(e.pointerId);
 });
@@ -375,35 +391,14 @@ btnTop.onclick = async () => {
 };
 
 /* --------- UI events --------- */
-ui.level.onchange = () => {
-  applyLevel(+ui.level.value);
-  resetPuck();
-};
-ui.launch.onclick = () => {
-  ensureAudio();
-  running = true;
-};
-ui.reset.onclick = () => {
-  running = false;
-  resetPuck();
-};
-ui.clear.onclick = () => {
-  planets = [];
-};
-ui.undo.onclick = () => {
-  planets.pop();
-};
-ui.ping.onclick = () => {
-  ensureAudio();
-  beep(660, 0.15);
-  if (ui.hap.checked && navigator.vibrate) navigator.vibrate(30);
-};
-ui.hc.onchange = () => {
-  document.body.classList.toggle("hc", ui.hc.checked);
-};
-ui.rm.onchange = () => {
-  /* Reduced motion => hide trails (ditangani di draw) */
-};
+ui.level.onchange = () => { applyLevel(+ui.level.value); resetPuck(); };
+ui.launch.onclick = () => { ensureAudio(); running = true; gameOverShown = false; gameOverAlpha = 0; };
+ui.reset.onclick  = () => { running = false; resetPuck(); };
+ui.clear.onclick  = () => { planets = []; };
+ui.undo.onclick   = () => { planets.pop(); };
+ui.ping.onclick   = () => { ensureAudio(); beep(660, 0.15); if (ui.hap.checked && navigator.vibrate) navigator.vibrate(30); };
+ui.hc.onchange    = () => { document.body.classList.toggle("hc", ui.hc.checked); };
+ui.rm.onchange    = () => { /* Reduced Motion => hide trails (handled in draw) */ };
 
 /* --------- Input: place planets / edit mode --------- */
 let dragThing = null; // {type:'note'|'goal', idx?, dx, dy}
@@ -411,36 +406,27 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("pointerdown", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left,
-    y = e.clientY - rect.top;
+        y = e.clientY - rect.top;
 
-  // Right click → remove planet nearest
+  // Right-click → remove the nearest planet
   if (e.button === 2) {
     if (!planets.length) return;
-    let k = 0,
-      best = 1e9;
+    let k = 0, best = 1e9;
     planets.forEach((p, i) => {
       const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-      if (d < best) {
-        best = d;
-        k = i;
-      }
+      if (d < best) { best = d; k = i; }
     });
     planets.splice(k, 1);
     return;
   }
 
-  // Edit mode: drag note/goal bila dekat
+  // Edit Mode: drag note/goal when the pointer is near
   if (ui.edit.checked) {
-    // cek note
     for (let i = 0; i < level.notes.length; i++) {
       const n = level.notes[i];
       const d = Math.hypot(n.x - x, n.y - y);
-      if (d <= n.r + 8) {
-        dragThing = { type: "note", idx: i, dx: x - n.x, dy: y - n.y };
-        return;
-      }
+      if (d <= n.r + 8) { dragThing = { type: "note", idx: i, dx: x - n.x, dy: y - n.y }; return; }
     }
-    // cek goal
     const g = level.goal;
     if (Math.hypot(g.x - x, g.y - y) <= g.r + 10) {
       dragThing = { type: "goal", dx: x - g.x, dy: y - g.y };
@@ -448,14 +434,14 @@ canvas.addEventListener("pointerdown", (e) => {
     }
   }
 
-  // Otherwise place planet
+  // Otherwise, place a planet
   if (planets.length < WORLD.maxPlanets) planets.push({ x, y, r: 18, mass: 1.0 });
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!dragThing) return;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left,
-    y = e.clientY - rect.top;
+        y = e.clientY - rect.top;
   if (dragThing.type === "note") {
     const n = level.notes[dragThing.idx];
     n.x = Math.max(0, Math.min(WORLD.W(), x - dragThing.dx));
@@ -469,7 +455,9 @@ addEventListener("pointerup", () => (dragThing = null));
 
 /* --------- Physics --------- */
 function step(dt) {
-  // time dilation
+  const now = performance.now();
+
+  // Time Dilation
   if (ui.td.checked) {
     for (const p of planets) {
       const d = Math.hypot(p.x - puck.x, p.y - puck.y);
@@ -477,52 +465,69 @@ function step(dt) {
     }
   }
 
-  let ax = 0,
-    ay = 0;
+  let ax = 0, ay = 0;
+
   for (const p of planets) {
-    const dx = p.x - puck.x,
-      dy = p.y - puck.y;
-    const d2 = dx * dx + dy * dy,
-      d = Math.sqrt(d2) + 1e-6;
+    const dx = p.x - puck.x;
+    const dy = p.y - puck.y;
+    const d2 = dx * dx + dy * dy;
+    const d  = Math.sqrt(d2) + 1e-6;
+
     const f = (WORLD.G * p.mass) / (d2 + 200);
     ax += (dx / d) * f;
     ay += (dy / d) * f;
 
+    // ==== Collision with planet ====
     if (d < p.r + puck.r) {
-      running = false;
-      beep(120, 0.12);
-      if (ui.hap.checked && navigator.vibrate) navigator.vibrate([20, 30, 20]);
-      return;
+      hitFlashUntil = now + 220; // red flicker
+      if (ui.hap.checked && navigator.vibrate) navigator.vibrate(18); // always do a light haptic
+
+      if (ui.pbounce && ui.pbounce.checked) {
+        // Resolve overlap so the puck doesn't "stick"
+        const nx = (puck.x - p.x) / d;
+        const ny = (puck.y - p.y) / d;
+        const overlap = (p.r + puck.r) - d + 0.1;
+        puck.x += nx * overlap;
+        puck.y += ny * overlap;
+
+        // Simple elastic bounce + damping
+        const vdotn = puck.vx * nx + puck.vy * ny;
+        puck.vx = (puck.vx - 2 * vdotn * nx) * 0.9;
+        puck.vy = (puck.vy - 2 * vdotn * ny) * 0.9;
+
+        beep(220, 0.08);
+        // continue simulation without returning
+      } else {
+        // CRASH → game over
+        running = false;
+        beep(120, 0.12);
+        if (ui.hap.checked && navigator.vibrate) navigator.vibrate([40, 60, 40]);
+        // effects
+        shakeUntil = now + 420; shakeMag = 7;
+        gameOverShown = true; gameOverAlpha = 0;
+        // optional auto reset
+        if (ui.autoReset && ui.autoReset.checked) {
+          setTimeout(() => { resetPuck(); running = true; }, 500);
+        }
+        return;
+      }
     }
+    // ==== END collision ====
   }
-  const maxA = 4000,
-    mag = Math.hypot(ax, ay);
-  if (mag > maxA) {
-    ax *= maxA / mag;
-    ay *= maxA / mag;
-  }
+
+  const maxA = 4000, mag = Math.hypot(ax, ay);
+  if (mag > maxA) { ax *= maxA / mag; ay *= maxA / mag; }
+
   puck.vx += ax * dt;
   puck.vy += ay * dt;
-  puck.x += puck.vx * dt;
-  puck.y += puck.vy * dt;
+  puck.x  += puck.vx * dt;
+  puck.y  += puck.vy * dt;
 
   if (ui.walls.checked) {
-    if (puck.x < puck.r) {
-      puck.x = puck.r;
-      puck.vx = Math.abs(puck.vx) * 0.9;
-    }
-    if (puck.x > WORLD.W() - puck.r) {
-      puck.x = WORLD.W() - puck.r;
-      puck.vx = -Math.abs(puck.vx) * 0.9;
-    }
-    if (puck.y < puck.r) {
-      puck.y = puck.r;
-      puck.vy = Math.abs(puck.vy) * 0.9;
-    }
-    if (puck.y > WORLD.H() - puck.r) {
-      puck.y = WORLD.H() - puck.r;
-      puck.vy = -Math.abs(puck.vy) * 0.9;
-    }
+    if (puck.x < puck.r) { puck.x = puck.r; puck.vx = Math.abs(puck.vx) * 0.9; }
+    if (puck.x > WORLD.W() - puck.r) { puck.x = WORLD.W() - puck.r; puck.vx = -Math.abs(puck.vx) * 0.9; }
+    if (puck.y < puck.r) { puck.y = puck.r; puck.vy = Math.abs(puck.vy) * 0.9; }
+    if (puck.y > WORLD.H() - puck.r) { puck.y = WORLD.H() - puck.r; puck.vy = -Math.abs(puck.vy) * 0.9; }
   } else {
     if (puck.x < -50 || puck.x > WORLD.W() + 50 || puck.y < -50 || puck.y > WORLD.H() + 50) {
       running = false;
@@ -531,7 +536,7 @@ function step(dt) {
     }
   }
 
-  // note
+  // Next note: check collision and advance
   const glow = level.notes[nextNoteIndex];
   if (glow) {
     const d = Math.hypot(glow.x - puck.x, glow.y - puck.y);
@@ -541,7 +546,7 @@ function step(dt) {
     }
   }
 
-  // goal
+  // Goal
   if (nextNoteIndex === level.notes.length && level.notes.length) {
     const d = Math.hypot(level.goal.x - puck.x, level.goal.y - puck.y);
     if (d < level.goal.r + puck.r) {
@@ -553,7 +558,6 @@ function step(dt) {
       if (ui.hap.checked && navigator.vibrate) navigator.vibrate([30, 40, 30]);
       scoreLbl.textContent = "Score " + score;
 
-      // submit
       try {
         if (window.Leaderboard) {
           const api = window.Leaderboard.selectBackend?.("sheets") || window.Leaderboard;
@@ -570,7 +574,7 @@ function step(dt) {
     }
   }
 
-  // trail
+  // Trail
   if (!ui.rm.checked && ui.trails.checked) {
     trail.push({ x: puck.x, y: puck.y });
     if (trail.length > TRAIL_MAX) trail.shift();
@@ -581,8 +585,7 @@ function step(dt) {
 
 /* --------- Render --------- */
 function drawGrid() {
-  const w = WORLD.W(),
-    h = WORLD.H();
+  const w = WORLD.W(), h = WORLD.H();
   ctx.fillStyle = "#0b1217";
   ctx.fillRect(0, 0, w, h);
   const gridCol = document.body.classList.contains("hc") ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)";
@@ -590,47 +593,42 @@ function drawGrid() {
   ctx.lineWidth = 1;
   const g = 40;
   for (let x = w % g; x < w; x += g) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
   }
   for (let y = h % g; y < h; y += g) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
 }
 function draw() {
+  const now = performance.now();
+
+  ctx.save();
+  // screen shake
+  if (now < shakeUntil) {
+    const k = (shakeUntil - now) / 420;           // fade out
+    const a = shakeMag * k;
+    ctx.translate((Math.random() - 0.5) * a, (Math.random() - 0.5) * a);
+  }
+
   drawGrid();
 
   // planets
   for (const p of planets) {
     ctx.fillStyle = "#7a6df6";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(122,109,246,.25)";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r * 1.6, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 1.6, 0, Math.PI * 2); ctx.stroke();
   }
 
   // notes
   level.notes.forEach((n, i) => {
     ctx.fillStyle = i < nextNoteIndex ? "#66e3c4" : "#8ad8ff";
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
   });
 
   // goal
-  ctx.strokeStyle = "#8fffb1";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(level.goal.x, level.goal.y, level.goal.r, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.strokeStyle = "#8fffb1"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(level.goal.x, level.goal.y, level.goal.r, 0, Math.PI * 2); ctx.stroke();
 
   // trail
   if (!ui.rm.checked && ui.trails.checked) {
@@ -640,11 +638,27 @@ function draw() {
     ctx.stroke();
   }
 
-  // puck
-  ctx.fillStyle = "#b8dbff";
-  ctx.beginPath();
-  ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2);
-  ctx.fill();
+  // puck (yellow normally, red during hitFlash)
+  const isHit = now < hitFlashUntil;
+  ctx.fillStyle = isHit ? "#ff4d4d" : "#ffd84a";
+  ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+
+  // GAME OVER overlay
+  if (!running && gameOverShown) {
+    gameOverAlpha = Math.min(1, gameOverAlpha + 0.08);
+    const w = WORLD.W(), h = WORLD.H();
+    ctx.fillStyle = `rgba(0,0,0,${0.25 * gameOverAlpha})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    ctx.font = "bold 48px system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial";
+    ctx.fillStyle = `rgba(255,90,90,${gameOverAlpha})`;
+    ctx.fillText("GAME OVER", w / 2, h / 2);
+    ctx.font = "16px system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial";
+    ctx.fillStyle = `rgba(255,255,255,${0.9 * gameOverAlpha})`;
+    ctx.fillText("Press Reset or Launch", w / 2, h / 2 + 28);
+  }
 
   stats.textContent = `Planets: ${planets.length}/${WORLD.maxPlanets}   Notes: ${level.notes.length}`;
 }
@@ -655,8 +669,7 @@ function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (running) {
-    const sub = ui.ultra.checked ? 3 : 1,
-      sdt = dt / sub;
+    const sub = ui.ultra.checked ? 3 : 1, sdt = dt / sub;
     for (let i = 0; i < sub; i++) step(sdt);
   }
   draw();
@@ -685,7 +698,7 @@ style.textContent = `
   .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .list .rowline{display:grid;grid-template-columns:2ch 1fr auto;gap:10px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
   .showbtn{position:fixed;left:12px;top:12px;z-index:25}
-  #helpBox{z-index:30} /* ensure help stays above */
+  #helpBox{z-index:30}
   body.hc .panel{border-color:rgba(255,255,255,.20)}
 `;
 document.head.appendChild(style);

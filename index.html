@@ -27,10 +27,10 @@
     html,body{margin:0;height:100%;background:var(--bg);color:var(--ink)}
     canvas{display:block;background:var(--bg)}
 
-    /* Panel container (dibangun oleh main.js ke #ui-root) */
+    /* Panel container (built by main.js into #ui-root) */
     #ui-root { position:fixed; inset:auto auto auto auto; z-index:10; }
 
-    /* Gaya umum untuk panel (boleh dipakai main.js) */
+    /* General panel styles (usable by main.js) */
     .panel{
       position:fixed; left:16px; top:16px; z-index:20;
       background:var(--panel); border:1px solid var(--border);
@@ -58,7 +58,7 @@
       max-width:420px; padding:12px; box-shadow:0 6px 24px rgba(0,0,0,.35)
     }
 
-    /* Footer credit — nonaktifkan jika sudah digambar di canvas */
+    /* Footer credit — disable if already drawn on the canvas */
     #credit{position:fixed;left:12px;bottom:12px;color:#a5bad6;font:13px system-ui;z-index:5}
     #credit a{color:#8ac7ff}
   </style>
@@ -66,7 +66,7 @@
 <body>
   <canvas id="canvas"></canvas>
 
-  <!-- Tempat main.js membangun panel -->
+  <!-- Where main.js renders the panel -->
   <div id="ui-root"></div>
 
   <!-- Help Modal -->
@@ -85,11 +85,11 @@
     </ol>
   </div>
 
-  <!-- Footer (hapus jika kredit juga digambar di canvas untuk menghindari dobel) -->
+  <!-- Footer (remove if the credit is also drawn on the canvas to avoid duplication) -->
   <!-- <div id="credit">GraviScore — by <a href="https://github.com/wiqile" target="_blank" rel="noopener">@wiqile</a></div> -->
 
-  <!-- Tiny helper supaya tombol Help di panel (yang dibuat main.js) bisa membuka modal ini,
-       tanpa perlu ngedit main.js. -->
+  <!-- Tiny helper so the Help button in the panel (created by main.js) can open this modal
+       without needing to modify main.js. -->
   <script>
   (() => {
     const help = document.getElementById('helpBox');
@@ -97,14 +97,14 @@
     const hideHelp = () => help.classList.add('hidden');
     document.getElementById('btnHelpClose').addEventListener('click', hideHelp);
 
-    // Jika main.js membuat tombol dengan id="btn-help", sambungkan otomatis.
+    // If main.js creates a button with id="btn-help", wire it up automatically.
     const mo = new MutationObserver(() => {
       const btn = document.getElementById('btn-help') || document.querySelector('[data-role="help"]');
       if (btn) { btn.addEventListener('click', showHelp, { once:false }); mo.disconnect(); }
     });
     mo.observe(document.documentElement, { childList:true, subtree:true });
 
-    // Ekspor global opsional (kalau mau dipanggil dari main.js)
+    // Optional global export (in case you want to call it from main.js)
     window.GraviScoreHelp = { show: showHelp, hide: hideHelp };
   })();
   </script>
